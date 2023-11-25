@@ -1,6 +1,7 @@
 import os
 import string
 import spacy
+import requests
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -18,15 +19,31 @@ nlp_pt = spacy.load("pt_core_news_sm")
 class JSONRequest(BaseModel):
     text: str
     model: str = "en"
+    preprocessing: bool = False
 
 @app.post("/")
-async def root(json: JSONRequest):
-    text = json.text
+async def root(jsonBase: JSONRequest):
+    text = jsonBase.text
+
+    if(jsonBase.preprocessing):
+        r = requests.post("https://preprocessing-k6ozgp36va-uc.a.run.app", json={
+            "text": text,
+            "model": jsonBase.model,
+            "remove_special_chars": True,
+            "lemmatize": True,
+            "remove_stopwords": True
+        })
+        
+        if(r.status_code == 200):
+            text = r.json()["response"]
+        else:
+            raise HTTPException(status_code=r.status_code)
+        
 
     # Carregue o modelo de idioma
-    if(json.model.lower() == "en"):
+    if(jsonBase.model.lower() == "en"):
         doc = nlp_en(text)
-    elif(json.model.lower() == "pt"):
+    elif(jsonBase.model.lower() == "pt"):
         doc = nlp_pt(text)
     else:
         raise HTTPException(status_code=406, detail="Model not found")
@@ -36,8 +53,8 @@ async def root(json: JSONRequest):
         entitys.append({"entidade":entity.text,"categoria":entity.label_})
 
     return JSONResponse(content={
-        "text": json.text,
-        "model": json.model,
+        "text": jsonBase.text,
+        "model": jsonBase.model,
         "response": entitys
     })
 
